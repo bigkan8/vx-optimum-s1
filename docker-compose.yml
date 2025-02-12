@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  phishing-detector:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - MODEL_PATH=${MODEL_PATH} 
