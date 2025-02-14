@@ -121,78 +121,48 @@ RESPONSE MUST:
 - Never invent or hallucinate sources
 - Skip facts that cannot be verified with a reliable source"""
 
-FINAL_ANALYSIS_PROMPT = """You are an expert phishing analyst with advanced reasoning capabilities. Your task is to analyze all available evidence and make a final determination about whether a message is phishing or legitimate.
+FINAL_ANALYSIS_PROMPT = """You are {character}. As this character, deliver a concise but powerful analysis of this potential phishing message. Be direct and impactful.
 
-{process_narrative}
+Message to analyze: {user_input}
 
-Available context - ANALYZE ALL EVIDENCE HOLISTICALLY:
-1. Original input: {user_input}
+Available Evidence:
+1. Message Analysis: {message_classification}
+2. URL Analysis: {url_analysis}
+3. Fact Verification: {fact_results}
 
-2. Message classification (if present): {message_classification}
-   - Consider the model's verdict and confidence level
-   - If RAG-enhanced, evaluate the similarity to known cases
-   - Weigh this evidence against other findings
-   - Note: This is one input among many, not the final verdict
+ANALYSIS REQUIREMENTS:
+1. Character Voice:
+   - Stay completely in character
+   - React as your character would
+   - Never explain who you are
+   - Keep your personality strong but brief
 
-3. URL analysis (if present): {url_analysis}
-   - Evaluate technical indicators objectively
-   - Consider both suspicious and legitimate aspects
-   - Weigh the technical evidence appropriately
-   - Note: Technical findings are important but not definitive
-
-4. Fact-checking results (if present): {fact_results}
-   - Carefully evaluate each verified fact
-   - Consider how verified facts support or contradict other evidence
-   - Give appropriate weight to officially verified information
-   - Format sources as: <u style="color: blue">[source_name](url)</u>
-   - Use concise source names (e.g., [MS Docs], [Security Guide])
-
-REASONING REQUIREMENTS:
-1. Evidence Analysis:
-   - Analyze each piece of evidence independently first
-   - Look for patterns and contradictions between different analyses
-   - Consider how facts and technical findings interact
-   - Identify which evidence is most reliable in this specific case
-
-2. Critical Thinking:
-   - Don't automatically trust any single analysis
-   - Look for logical connections between different pieces of evidence
-   - Consider alternative explanations for the findings
-   - Evaluate the strength and reliability of each evidence type
-
-3. Decision Making:
-   - Make your own final determination based on ALL available evidence
-   - Explain your reasoning clearly, showing how different factors influenced your decision
-   - Be willing to disagree with individual analysis results if the totality of evidence suggests otherwise
-   - Provide confidence level in your final determination
+2. Technical Depth:
+   - Hit the key technical points hard
+   - Include critical verified facts
+   - Format sources as: <u style="color: blue">[name](url)</u>
+   - No fluff, just the crucial findings
 
 OUTPUT STRUCTURE:
-1. Evidence Analysis:
-   ONLY include sections with actual findings:
-   - Message patterns and classification
-   - URL technical details (if analyzed)
-   - Fact verification results (if verified)
-   Use concise, styled hyperlinks for sources
+1. Opening Punch (2-3 lines):
+   - Your immediate reaction
+   - Set the tone
 
-2. Reasoning:
-   - Explain how you weighed different pieces of evidence
-   - Point out any contradictions or supporting patterns
-   - Show your critical thinking process
+2. Critical Findings (4-5 bullet points):
+   - Most damning technical evidence
+   - Key verified facts with sources
+   - Pattern analysis (your style)
 
-3. Bottom line:
-   - Your final determination (phishing or legitimate)
-   - Explanation of key factors that led to this conclusion
-   - Confidence level in your determination
-   
-4. If phishing, provide clear security recommendations
+3. Verdict & Action (2-3 lines):
+   - Your conclusion
+   - Essential security advice
 
-CRITICAL REQUIREMENTS:
-- Stay in character throughout the analysis
-- Only discuss components with actual findings
-- Format sources as: <u style="color: blue">[name](url)</u>
-- Never show raw URLs
-- Make your own final decision based on holistic analysis
-- Show clear reasoning for your conclusion"""
+CRITICAL:
+- Keep it sharp and impactful
+- Stay in character 100%
+- Include all key technical details
+- Maximum 3 paragraphs total
+- Make every word count"""
 
 RAG_ANALYSIS_PROMPT = """Analyze this message using the provided context for phishing detection:
 
