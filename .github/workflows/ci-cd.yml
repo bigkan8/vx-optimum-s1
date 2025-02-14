@@ -1,0 +1,82 @@
+name: VerifiedX CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.10.x]
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov flake8 black mypy
+        
+    - name: Run linting
+      run: |
+        flake8 src tests
+        black --check src tests
+        mypy src
+        
+    - name: Run tests with coverage
+      run: |
+        pytest --cov=src tests/ --cov-report=xml
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+        PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+        PINECONE_INDEX: ${{ secrets.PINECONE_INDEX }}
+        MODEL_PATH: ${{ secrets.MODEL_PATH }}
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: true
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+      
+    - name: Build and push Docker image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: verifiedx
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        
+    - name: Update ECS service
+      run: |
+        aws ecs update-service --cluster verifiedx-cluster --service verifiedx-service --force-new-deployment 

@@ -60,6 +60,8 @@ from openai import OpenAI
 from ..config.prompts import FINAL_ANALYSIS_PROMPT
 from ..config.settings import API_CONFIG
 from ..utils.logger import Logger
+from ..utils.process_logger import ProcessLogger
+from ..utils.character_selector import CharacterSelector
 import asyncio
 import tenacity
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -78,6 +80,8 @@ class OutputGenerator:
         self.model = model or settings["model"]
         self.timeout = settings["timeout"]
         self.max_retries = 3
+        self.process_logger = ProcessLogger()
+        self.character_selector = CharacterSelector()
 
     @retry(
         stop=stop_after_attempt(3),
@@ -93,6 +97,9 @@ class OutputGenerator:
     ) -> str:
         """Generate final analysis output with natural expressions and comprehensive analysis"""
         try:
+            # Clear previous process log
+            self.process_logger.clear()
+            
             # Log incoming data
             logger.debug(f"Message analysis received: {json.dumps(message_analysis, indent=2)}")
             
@@ -101,24 +108,81 @@ class OutputGenerator:
             url_analysis = url_analysis or {}
             fact_check_results = fact_check_results or {}
             
-            # Prepare the context with all available information
-            context = {
-                "user_input": text,
-                "message_classification": message_analysis,
-                "url_analysis": url_analysis,
-                "fact_results": fact_check_results
-            }
+            # Log initial analysis step
+            self.process_logger.add_step(
+                "Analyzing input message",
+                {
+                    "message_length": len(text),
+                    "contains_urls": bool(url_analysis),
+                    "contains_facts": bool(fact_check_results)
+                }
+            )
             
-            # Get the natural language analysis with timeout
+            # Log message classification results if present
+            if message_analysis:
+                self.process_logger.add_step(
+                    "Analyzing message patterns and content",
+                    {
+                        "confidence": f"{message_analysis.get('confidence', 0)*100:.1f}%",
+                        "indicators": {
+                            "suspicious": message_analysis.get("indicators", {}).get("suspicious", []),
+                            "legitimate": message_analysis.get("indicators", {}).get("legitimate", [])
+                        }
+                    }
+                )
+            
+            # Log URL analysis if present
+            if url_analysis:
+                self.process_logger.add_step(
+                    "Performing technical URL analysis",
+                    {
+                        "confidence": f"{url_analysis.get('confidence', 0)*100:.1f}%",
+                        "technical_indicators": {
+                            "suspicious": url_analysis.get("indicators", {}).get("suspicious", []),
+                            "legitimate": url_analysis.get("indicators", {}).get("legitimate", [])
+                        }
+                    }
+                )
+            
+            # Log fact verification if present
+            if fact_check_results and fact_check_results.get("verified_facts"):
+                self.process_logger.add_step(
+                    "Verifying factual claims",
+                    {
+                        "verified_facts": [
+                            {
+                                "claim": fact["claim"],
+                                "verified": fact["is_true"],
+                                "source": fact["sources"]["urls"][0] if fact["sources"]["urls"] else "No source"
+                            }
+                            for fact in fact_check_results["verified_facts"]
+                        ]
+                    }
+                )
+            
+            # Select random character for analysis
+            character = self.character_selector.get_random_character()
+            self.process_logger.add_step(
+                f"Generating analysis as {character['name']}",
+                {"character_traits": character["traits"]}
+            )
+            
+            # Get the process narrative
+            process_narrative = self.process_logger.get_process_narrative()
+            
+            # Create completion with async client
             try:
                 response = await asyncio.wait_for(
-                    self._make_api_call(context),
+                    self._make_api_call(text, message_analysis, url_analysis, fact_check_results, character, process_narrative),
                     timeout=self.timeout
                 )
                 
                 result = response.choices[0].message.content
                 logger.debug(f"Generated output: {result}")
-                return result
+                
+                # Combine process narrative with analysis
+                final_output = f"{process_narrative}\n\nFinal Analysis:\n{result}"
+                return final_output
                 
             except asyncio.TimeoutError:
                 logger.error("API request timed out, using fallback")
@@ -131,59 +195,25 @@ class OutputGenerator:
             logger.error(f"Error in output generation: {str(e)}")
             return self._generate_natural_fallback(text, message_analysis, url_analysis, fact_check_results)
 
-    async def _make_api_call(self, context: Dict[str, Any]):
+    async def _make_api_call(
+        self, 
+        text: str,
+        message_analysis: Dict[str, Any],
+        url_analysis: Dict[str, Any],
+        fact_check_results: Dict[str, Any],
+        character: Dict[str, Any],
+        process_narrative: str
+    ):
         """Make the API call with retries"""
         try:
-            # Ensure all context values are dictionaries, not None
-            message_classification = context.get("message_classification") or {}
-            url_analysis = context.get("url_analysis") or {}
-            fact_results = context.get("fact_results") or {}
-            
-            # Prepare system message based on what analyses were performed
-            system_message = """You are an expert phishing analyst who speaks in the style of one of these characters (pick one randomly for each analysis):
-
-1. Jesse Pinkman (Breaking Bad):
-- Uses "Yo" frequently
-- Casual, street-smart language
-- Ends sentences with "...bitch!"
-- Expresses disbelief with "Yeah science!"
-- Shows frustration with "This is bullshit, yo!"
-- Uses phrases like "mad sus" and "straight up"
-
-2. Harvey Specter (Suits):
-- Confident, sharp, witty
-- Uses legal analogies
-- Says "That's the difference between you and me"
-- Often starts with "Here's the thing"
-- Uses "Now that's what I call..."
-- Emphasizes winning and being the best
-
-3. Elon Musk:
-- Uses technical jargon mixed with memes
-- Adds "haha" or "lmao" to serious statements
-- Makes references to AI, rockets, or Mars
-- Uses "Actually..." to correct things
-- Adds "(obv)" or "!!" for emphasis
-- Makes jokes about bots/algorithms
-
-Analyze the following evidence and maintain your chosen character's style throughout."""
-
-            # Add analysis sections based on available data
-            if message_classification:
-                system_message += "\n\nMessage Classification Available: Explain the model's verdict and confidence level."
-                
-            if url_analysis:
-                system_message += "\n\nURL Analysis Available: Discuss the technical findings and indicators."
-                
-            if fact_results and fact_results.get("verified_facts"):
-                system_message += "\n\nFact Verification Available: Review the verified claims and their sources."
-
             # Create a safe context for the prompt
             safe_context = {
-                "user_input": context.get("user_input", ""),
-                "message_classification": message_classification,
+                "user_input": text,
+                "message_classification": message_analysis,
                 "url_analysis": url_analysis,
-                "fact_results": fact_results
+                "fact_results": fact_check_results,
+                "process_narrative": process_narrative,
+                "character": self.character_selector.get_character_prompt(character)
             }
 
             return self.client.chat.completions.create(
@@ -191,7 +221,7 @@ Analyze the following evidence and maintain your chosen character's style throug
                 messages=[
                     {
                         "role": "system",
-                        "content": system_message
+                        "content": f"You are an expert phishing analyst speaking in the style of this character:\n\n{safe_context['character']}\n\nAnalyze all evidence and maintain this character's style throughout."
                     },
                     {
                         "role": "user",
