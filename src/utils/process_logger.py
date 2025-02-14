@@ -5,10 +5,6 @@ showing the step-by-step thinking and analysis without exposing internal impleme
 """
 
 from typing import List, Dict, Any
-import json
-from ..utils.logger import Logger
-
-logger = Logger(__name__)
 
 class ProcessLogger:
     def __init__(self):
@@ -21,30 +17,43 @@ class ProcessLogger:
             "findings": findings or {}
         }
         self.steps.append(step)
-        logger.debug(f"Added process step: {json.dumps(step, indent=2)}")
         
     def get_process_narrative(self) -> str:
         """Generate a user-friendly narrative of the analysis process"""
-        narrative = ["Analysis Process:\n"]
+        narrative = ["Here's how I analyzed this message:\n"]
         
-        for i, step in enumerate(self.steps, 1):
-            narrative.append(f"\nStep {i}: {step['description']}")
-            if step['findings']:
-                narrative.append("Findings:")
-                for key, value in step['findings'].items():
-                    if isinstance(value, (list, dict)):
-                        narrative.append(f"- {key}:")
-                        if isinstance(value, list):
-                            for item in value:
-                                narrative.append(f"  • {item}")
-                        else:  # dict
-                            for k, v in value.items():
-                                narrative.append(f"  • {k}: {v}")
-                    else:
-                        narrative.append(f"- {key}: {value}")
-                narrative.append("")
+        for step in self.steps:
+            # Skip initial message analysis step as it's redundant
+            if "Analyzing input message" in step["description"]:
+                continue
+                
+            # Handle message classification step
+            if "message patterns" in step["description"].lower():
+                if step["findings"].get("confidence"):
+                    narrative.append("1. First, I analyzed the message content and writing patterns.")
+                continue
+                
+            # Handle URL analysis step
+            if "URL analysis" in step["description"]:
+                if step["findings"].get("technical_indicators"):
+                    narrative.append("2. I found a URL in the message and performed a technical security analysis on it.")
+                continue
+                
+            # Handle fact verification step
+            if "factual claims" in step["description"]:
+                facts = step["findings"].get("verified_facts", [])
+                if facts:
+                    narrative.append("3. I checked the factual claims in the message against reliable sources.")
+                continue
+                
+            # Handle character selection step - skip this as it's not relevant to the user
+            if "Generating analysis as" in step["description"]:
+                continue
         
-        return "\n".join(narrative)
+        # Only return narrative if we have meaningful steps
+        if len(narrative) > 1:  # More than just the intro line
+            return "\n".join(narrative)
+        return ""  # Return empty string if no meaningful steps to show
 
     def clear(self) -> None:
         """Clear the process log"""
